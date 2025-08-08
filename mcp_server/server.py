@@ -9,7 +9,6 @@ from fake_useragent import UserAgent
 import re
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from pydantic import BaseModel
 import concurrent.futures
 
 # Configure logging
@@ -26,13 +25,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Pydantic models for request validation
-class CompareRequest(BaseModel):
-    product_name: str
-    category: Optional[str] = None
-    platforms: Optional[List[str]] = None
-    max_results: int = 5
 
 # Initialize user agent
 ua = UserAgent()
@@ -79,7 +71,7 @@ class SimpleScraper:
                 response = await loop.run_in_executor(None, lambda: future.result())
                 
             if response:
-                return await self._parse_results(response, max_results)
+                return await self._parse_results(response, max_results, query)
             else:
                 return []
                         
@@ -100,7 +92,7 @@ class SimpleScraper:
             logger.error(f"Request error for {self.name}: {e}")
             return None
     
-    async def _parse_results(self, html: str, max_results: int) -> List[Dict[str, Any]]:
+    async def _parse_results(self, html: str, max_results: int, query: str) -> List[Dict[str, Any]]:
         """Parse HTML results - simplified implementation"""
         soup = BeautifulSoup(html, 'html.parser')
         products = []
