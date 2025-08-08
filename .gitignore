@@ -264,3 +264,4 @@ mcp_server/cleanup.py
 !mcp_server/RENDER_DEPLOY.md
 !mcp_server/Procfile
 !mcp_server/runtime.txt
+!mcp_server/build.sh
