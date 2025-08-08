@@ -2,7 +2,7 @@
   "name": "comparekart-price-finder",
   "version": "1.0.0",
   "description": "AI-powered price comparison across major Indian e-commerce platforms. Find the best deals on products from Amazon, JioMart, Zepto, Instamart, Purplle, Tira, Mamaearth, and more with category-based filtering.",
-  "entrypoint": "wss://your-server.com/mcp",
+  "entrypoint": "wss://comparekart-nkwb.onrender.com/mcp",
   "author": "CompareKart Team",
   "tags": ["ecommerce", "price-comparison", "shopping", "india", "deals"],
   "tools": [
@@ -79,5 +79,10 @@
     "Purplle",
     "Tira",
     "Mamaearth"
-  ]
+  ],
+  "server": {
+    "url": "https://comparekart-nkwb.onrender.com",
+    "websocket": "wss://comparekart-nkwb.onrender.com/mcp",
+    "health_check": "https://comparekart-nkwb.onrender.com/health"
+  }
 }
