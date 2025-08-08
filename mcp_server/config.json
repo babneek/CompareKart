@@ -1,0 +1,83 @@
+{
+  "name": "comparekart-price-finder",
+  "version": "1.0.0",
+  "description": "AI-powered price comparison across major Indian e-commerce platforms. Find the best deals on products from Amazon, JioMart, Zepto, Instamart, Purplle, Tira, Mamaearth, and more with category-based filtering.",
+  "entrypoint": "wss://your-server.com/mcp",
+  "author": "CompareKart Team",
+  "tags": ["ecommerce", "price-comparison", "shopping", "india", "deals"],
+  "tools": [
+    {
+      "name": "compare_product_prices",
+      "description": "Compare prices of a product across multiple Indian e-commerce platforms with category-based filtering. Returns best deals, savings, and direct purchase links.",
+      "parameters": {
+        "product_name": {
+          "type": "string",
+          "description": "Name of the product to search for (e.g., 'iPhone 15', 'Lakme lipstick', 'Maggi noodles')",
+          "required": true
+        },
+        "category": {
+          "type": "string",
+          "description": "Product category to filter platforms (optional)",
+          "enum": ["general", "beauty", "grocery", "fashion", "quick_commerce"],
+          "required": false
+        },
+        "platforms": {
+          "type": "string",
+          "description": "Comma-separated list of specific platforms to search (optional)",
+          "required": false
+        },
+        "max_results": {
+          "type": "integer",
+          "description": "Maximum number of results per platform (default: 5)",
+          "default": 5,
+          "required": false
+        }
+      }
+    },
+    {
+      "name": "get_available_platforms",
+      "description": "Get list of all available e-commerce platforms organized by category",
+      "parameters": {}
+    },
+    {
+      "name": "get_platform_categories",
+      "description": "Get list of all product categories and their associated platforms",
+      "parameters": {}
+    },
+    {
+      "name": "find_best_deal",
+      "description": "Find the absolute best deal for a specific product across all platforms",
+      "parameters": {
+        "product_name": {
+          "type": "string",
+          "description": "Name of the product to find best deal for",
+          "required": true
+        },
+        "category": {
+          "type": "string",
+          "description": "Product category to filter platforms (optional)",
+          "enum": ["general", "beauty", "grocery", "fashion", "quick_commerce"],
+          "required": false
+        }
+      }
+    }
+  ],
+  "capabilities": [
+    "Real-time price comparison",
+    "Category-based platform filtering", 
+    "Best deal identification",
+    "Savings calculation",
+    "Direct purchase links",
+    "Multi-platform search",
+    "Indian e-commerce focus"
+  ],
+  "supported_platforms": [
+    "Amazon India",
+    "JioMart", 
+    "Zepto",
+    "Instamart",
+    "Purplle",
+    "Tira",
+    "Mamaearth"
+  ]
+}

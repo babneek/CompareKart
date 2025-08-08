@@ -1,0 +1,52 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+  }
+  
+  .btn-secondary {
+    @apply bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+  }
+  
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6;
+  }
+  
+  .input-field {
+    @apply w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all duration-200;
+  }
+  
+  .price-tag {
+    @apply text-2xl font-bold text-gray-900;
+  }
+  
+  .savings-badge {
+    @apply bg-success-50 text-success-600 px-3 py-1 rounded-full text-sm font-medium;
+  }
+  
+  .platform-badge {
+    @apply px-3 py-1 rounded-full text-sm font-medium;
+  }
+  
+  .platform-amazon {
+    @apply bg-orange-100 text-orange-800;
+  }
+  
+  .platform-flipkart {
+    @apply bg-blue-100 text-blue-800;
+  }
+  
+  .platform-blinkit {
+    @apply bg-yellow-100 text-yellow-800;
+  }
+}
