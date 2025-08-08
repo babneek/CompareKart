@@ -252,7 +252,6 @@ mcp_server/serverless.yml
 mcp_server/requirements-lambda.txt
 mcp_server/railway.json
 mcp_server/Dockerfile
-mcp_server/Procfile
 mcp_server/deploy.py
 mcp_server/cleanup.py
 
@@ -263,3 +262,5 @@ mcp_server/cleanup.py
 !mcp_server/render.yaml
 !mcp_server/README.md
 !mcp_server/RENDER_DEPLOY.md
+!mcp_server/Procfile
+!mcp_server/runtime.txt
