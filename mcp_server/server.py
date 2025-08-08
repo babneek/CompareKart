@@ -9,6 +9,7 @@ from fake_useragent import UserAgent
 import re
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from pydantic import BaseModel
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -24,6 +25,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Pydantic models for request validation
+class CompareRequest(BaseModel):
+    product_name: str
+    category: Optional[str] = None
+    platforms: Optional[List[str]] = None
+    max_results: int = 5
 
 # Initialize user agent
 ua = UserAgent()
@@ -63,7 +71,8 @@ class SimpleScraper:
             
             search_url = f"{self.base_url}{self.search_path}{query.replace(' ', '+')}"
             
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(search_url, headers=headers) as response:
                     if response.status == 200:
                         html = await response.text()
