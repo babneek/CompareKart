@@ -309,6 +309,22 @@ async def handle_mcp_request(request: Dict[str, Any]) -> Dict[str, Any]:
                     "id": request_id
                 }
             
+            elif tool_name == "validate":
+                # Required by Puch AI - returns server owner's phone number
+                phone_number = "918076893417"  # Your actual phone number in format {country_code}{number}
+                return {
+                    "jsonrpc": "2.0",
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": phone_number
+                            }
+                        ]
+                    },
+                    "id": request_id
+                }
+            
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -340,6 +356,11 @@ async def handle_mcp_request(request: Dict[str, Any]) -> Dict[str, Any]:
                 {
                     "name": "get_platform_categories", 
                     "description": "Get available product categories and their associated platforms",
+                    "inputSchema": {"type": "object", "properties": {}}
+                },
+                {
+                    "name": "validate",
+                    "description": "Validate server",
                     "inputSchema": {"type": "object", "properties": {}}
                 }
             ]

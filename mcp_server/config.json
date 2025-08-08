@@ -41,8 +41,19 @@
     },
     {
       "name": "get_platform_categories",
-      "description": "Get list of all product categories and their associated platforms",
-      "parameters": {}
+      "description": "Get available product categories and their associated platforms for targeted searching",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "validate",
+      "description": "Validate server ownership - returns server owner's phone number as required by Puch AI MCP compliance",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
     },
     {
       "name": "find_best_deal",
