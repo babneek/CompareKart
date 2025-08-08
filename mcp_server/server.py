@@ -1,23 +1,14 @@
 import asyncio
 import json
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import sys
-import os
-
-# Add the backend directory to Python path to import CompareKart modules
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
-
-from app.api.routes import compare_prices, get_categories, get_platforms
-from app.scrapers.amazon import amazon_scraper
-from app.scrapers.jiomart import jiomart_scraper
-from app.scrapers.zepto import zepto_scraper
-from app.scrapers.instamart import instamart_scraper
-from app.scrapers.purplle import purplle_scraper
-from app.scrapers.tira import tira_scraper
-from app.scrapers.mamaearth import mamaearth_scraper
-from app.utils.ai_matcher import product_matcher
+import aiohttp
+from bs4 import BeautifulSoup
+from fake_useragent import UserAgent
+import re
+from typing import List, Dict, Any, Optional
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,18 +25,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Available scrapers mapping
-SCRAPERS = {
-    "amazon": amazon_scraper,
-    "jiomart": jiomart_scraper,
-    "zepto": zepto_scraper,
-    "instamart": instamart_scraper,
-    "purplle": purplle_scraper,
-    "tira": tira_scraper,
-    "mamaearth": mamaearth_scraper,
-}
+# Initialize user agent
+ua = UserAgent()
 
-# Platform categories
+# Platform categories configuration
 PLATFORM_CATEGORIES = {
     "general": {
         "name": "General E-commerce",
@@ -53,244 +36,326 @@ PLATFORM_CATEGORIES = {
     },
     "beauty": {
         "name": "Beauty & Personal Care", 
-        "platforms": ["purplle", "tira", "mamaearth", "amazon"]
+        "platforms": ["purplle", "amazon"]
     },
     "grocery": {
-        "name": "Groceries & Food",
-        "platforms": ["jiomart", "amazon"]
-    },
-    "quick_commerce": {
-        "name": "Quick Commerce",
-        "platforms": ["zepto", "instamart"]
+        "name": "Grocery & Quick Commerce",
+        "platforms": ["zepto", "instamart", "jiomart"]
     }
 }
 
-class MCPServer:
-    def __init__(self):
-        self.active_connections = []
-    
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-        logger.info(f"New MCP client connected. Total connections: {len(self.active_connections)}")
-    
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-        logger.info(f"MCP client disconnected. Total connections: {len(self.active_connections)}")
-    
-    async def handle_tool_request(self, request_data: dict) -> dict:
-        """Handle tool requests from Puch AI"""
-        try:
-            tool_name = request_data.get("tool")
-            parameters = request_data.get("parameters", {})
-            
-            if tool_name == "compare_product_prices":
-                return await self.compare_product_prices(parameters)
-            elif tool_name == "get_available_platforms":
-                return await self.get_available_platforms()
-            elif tool_name == "get_platform_categories":
-                return await self.get_platform_categories()
-            elif tool_name == "find_best_deal":
-                return await self.find_best_deal(parameters)
-            else:
-                return {
-                    "error": f"Unknown tool: {tool_name}",
-                    "available_tools": ["compare_product_prices", "get_available_platforms", "get_platform_categories", "find_best_deal"]
-                }
+class SimpleScraper:
+    def __init__(self, name: str, base_url: str, search_path: str):
+        self.name = name
+        self.base_url = base_url
+        self.search_path = search_path
         
-        except Exception as e:
-            logger.error(f"Error handling tool request: {e}")
-            return {"error": f"Tool execution failed: {str(e)}"}
-    
-    async def compare_product_prices(self, parameters: dict) -> dict:
-        """Compare prices across multiple platforms"""
+    async def search_product(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+        """Simple product search implementation"""
         try:
-            product_name = parameters.get("product_name")
-            category = parameters.get("category")
-            platforms = parameters.get("platforms")
-            max_results = parameters.get("max_results", 5)
+            headers = {
+                'User-Agent': ua.random,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate',
+                'Connection': 'keep-alive',
+            }
             
-            if not product_name:
-                return {"error": "product_name is required"}
+            search_url = f"{self.base_url}{self.search_path}{query.replace(' ', '+')}"
             
-            # Determine which platforms to search
-            selected_platforms = []
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                async with session.get(search_url, headers=headers) as response:
+                    if response.status == 200:
+                        html = await response.text()
+                        return await self._parse_results(html, max_results)
+                    else:
+                        logger.warning(f"{self.name} returned status {response.status}")
+                        return []
+                        
+        except Exception as e:
+            logger.error(f"Error scraping {self.name}: {e}")
+            return []
+    
+    async def _parse_results(self, html: str, max_results: int) -> List[Dict[str, Any]]:
+        """Parse HTML results - simplified implementation"""
+        soup = BeautifulSoup(html, 'html.parser')
+        products = []
+        
+        # Generic selectors that work across platforms
+        selectors = [
+            {'title': '[data-cy="product-title"]', 'price': '[data-cy="product-price"]'},
+            {'title': '.product-title', 'price': '.product-price'},
+            {'title': 'h2', 'price': '.price'},
+            {'title': '.title', 'price': '.cost'}
+        ]
+        
+        for selector_set in selectors:
+            titles = soup.select(selector_set['title'])
+            prices = soup.select(selector_set['price'])
             
-            if platforms:
-                selected_platforms = [p.strip().lower() for p in platforms.split(",")]
-            elif category and category in PLATFORM_CATEGORIES:
-                selected_platforms = PLATFORM_CATEGORIES[category]["platforms"]
-            else:
-                selected_platforms = list(SCRAPERS.keys())
-            
-            # Filter to only available scrapers
-            available_platforms = [p for p in selected_platforms if p in SCRAPERS]
-            
-            if not available_platforms:
-                return {"error": "No valid platforms specified"}
-            
-            logger.info(f"MCP: Searching platforms {available_platforms} for product: {product_name}")
-            
-            # Create search tasks
-            search_tasks = []
-            platform_names = []
-            
-            for platform in available_platforms:
-                if platform in SCRAPERS:
-                    search_tasks.append(SCRAPERS[platform].search_product(product_name, max_results))
-                    platform_names.append(platform)
-            
-            # Execute searches concurrently
-            results = await asyncio.gather(*search_tasks, return_exceptions=True)
-            
-            # Process results
-            all_products = []
-            platform_results = {}
-            
-            for i, (platform, result) in enumerate(zip(platform_names, results)):
-                if isinstance(result, Exception):
-                    logger.error(f"Error searching {platform}: {result}")
-                    platform_results[f"{platform}_count"] = 0
-                    continue
+            for i, (title_elem, price_elem) in enumerate(zip(titles[:max_results], prices[:max_results])):
+                if i >= max_results:
+                    break
                     
-                platform_results[f"{platform}_count"] = len(result)
+                title = title_elem.get_text(strip=True)
+                price_text = price_elem.get_text(strip=True)
                 
-                # Add platform identifier to each product
-                for product_data in result:
-                    product_data['platform'] = platform.title()
-                    all_products.append(product_data)
-            
-            # Use AI to match similar products across platforms
-            if all_products:
-                matched_groups = await product_matcher.match_products_across_platforms(all_products)
-            else:
-                matched_groups = []
-            
-            # Find best overall deal
-            best_deal = None
-            total_savings = 0
-            
-            if all_products:
-                best_deal = min(all_products, key=lambda x: x.get('price', float('inf')))
+                # Extract numeric price
+                price_match = re.search(r'[\d,]+\.?\d*', price_text.replace(',', ''))
+                price = float(price_match.group()) if price_match else 0.0
                 
-                if matched_groups:
-                    for group in matched_groups:
-                        total_savings += group['price_stats'].get('savings', 0) or 0
+                if title and price > 0:
+                    products.append({
+                        'title': title,
+                        'price': price,
+                        'currency': 'INR',
+                        'platform': self.name.title(),
+                        'url': f"{self.base_url}/product/{i}",  # Placeholder URL
+                        'availability': 'In Stock'
+                    })
             
-            return {
-                "success": True,
-                "query": product_name,
-                "category": category,
-                "platforms_searched": [p.title() for p in available_platforms],
-                "total_products_found": len(all_products),
-                "platform_results": platform_results,
-                "best_deal": best_deal,
-                "total_savings": round(total_savings, 2),
-                "matched_groups": matched_groups[:3] if matched_groups else [],  # Limit for MCP response
-                "all_products": all_products[:10]  # Limit for MCP response
-            }
-            
-        except Exception as e:
-            logger.error(f"Error in compare_product_prices: {e}")
-            return {"error": f"Price comparison failed: {str(e)}"}
-    
-    async def get_available_platforms(self) -> dict:
-        """Get list of available platforms organized by category"""
-        return {
-            "success": True,
-            "platforms_by_category": PLATFORM_CATEGORIES,
-            "all_platforms": list(SCRAPERS.keys()),
-            "total_platforms": len(SCRAPERS)
-        }
-    
-    async def get_platform_categories(self) -> dict:
-        """Get list of platform categories"""
-        return {
-            "success": True,
-            "categories": {
-                category: {
-                    "name": data["name"],
-                    "platforms": data["platforms"],
-                    "platform_count": len(data["platforms"])
-                }
-                for category, data in PLATFORM_CATEGORIES.items()
-            }
-        }
-    
-    async def find_best_deal(self, parameters: dict) -> dict:
-        """Find the absolute best deal for a product"""
-        try:
-            # Use the same logic as compare_product_prices but focus on best deal
-            comparison_result = await self.compare_product_prices(parameters)
-            
-            if comparison_result.get("success") and comparison_result.get("best_deal"):
-                best_deal = comparison_result["best_deal"]
-                return {
-                    "success": True,
-                    "query": parameters.get("product_name"),
-                    "best_deal": best_deal,
-                    "savings_info": f"Best price found: ₹{best_deal.get('price', 'N/A')} on {best_deal.get('platform', 'Unknown')}",
-                    "direct_link": best_deal.get('url', '#')
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": "No deals found for the specified product"
-                }
+            if products:
+                break
                 
-        except Exception as e:
-            logger.error(f"Error in find_best_deal: {e}")
-            return {"error": f"Best deal search failed: {str(e)}"}
+        return products[:max_results]
 
-# Create MCP server instance
-mcp_server = MCPServer()
+# Initialize scrapers
+SCRAPERS = {
+    "amazon": SimpleScraper("amazon", "https://www.amazon.in", "/s?k="),
+    "jiomart": SimpleScraper("jiomart", "https://www.jiomart.com", "/search/"),
+    "zepto": SimpleScraper("zepto", "https://www.zepto.com", "/search?q="),
+    "instamart": SimpleScraper("instamart", "https://www.swiggy.com", "/instamart/search?q="),
+    "purplle": SimpleScraper("purplle", "https://www.purplle.com", "/search?q=")
+}
 
+async def compare_products(product_name: str, category: Optional[str] = None, platforms: Optional[List[str]] = None, max_results: int = 5) -> Dict[str, Any]:
+    """Compare products across platforms"""
+    try:
+        # Determine which platforms to search
+        if platforms:
+            selected_platforms = [p.lower() for p in platforms if p.lower() in SCRAPERS]
+        elif category and category in PLATFORM_CATEGORIES:
+            selected_platforms = PLATFORM_CATEGORIES[category]["platforms"]
+        else:
+            selected_platforms = list(SCRAPERS.keys())
+        
+        if not selected_platforms:
+            raise ValueError("No valid platforms specified")
+        
+        logger.info(f"Searching platforms: {selected_platforms} for product: {product_name}")
+        
+        # Create search tasks
+        search_tasks = []
+        for platform in selected_platforms:
+            if platform in SCRAPERS:
+                search_tasks.append(SCRAPERS[platform].search_product(product_name, max_results))
+        
+        # Execute searches concurrently
+        results = await asyncio.gather(*search_tasks, return_exceptions=True)
+        
+        # Process results
+        all_products = []
+        platform_results = {}
+        
+        for platform, result in zip(selected_platforms, results):
+            if isinstance(result, Exception):
+                logger.error(f"Error searching {platform}: {result}")
+                platform_results[f"{platform}_count"] = 0
+                continue
+                
+            platform_results[f"{platform}_count"] = len(result)
+            all_products.extend(result)
+        
+        # Find best deal
+        best_deal = None
+        if all_products:
+            best_deal = min(all_products, key=lambda x: x.get('price', float('inf')))
+        
+        return {
+            "query": product_name,
+            "category": category,
+            "selected_platforms": selected_platforms,
+            "timestamp": datetime.now().isoformat(),
+            "total_products": len(all_products),
+            "platform_results": platform_results,
+            "products": all_products,
+            "best_deal": best_deal,
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error comparing products: {e}")
+        raise HTTPException(status_code=500, detail=f"Error comparing products: {str(e)}")
+
+# MCP Protocol Implementation
 @app.websocket("/mcp")
-async def websocket_endpoint(websocket: WebSocket):
-    """Main MCP WebSocket endpoint for Puch AI"""
-    await mcp_server.connect(websocket)
+async def mcp_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    logger.info("MCP WebSocket connection established")
+    
     try:
         while True:
-            # Receive request from Puch AI
-            data = await websocket.receive_text()
-            request = json.loads(data)
+            # Receive message from client
+            message = await websocket.receive_text()
+            logger.info(f"Received MCP message: {message}")
             
-            logger.info(f"Received MCP request: {request.get('tool', 'unknown')}")
-            
-            # Process the tool request
-            response = await mcp_server.handle_tool_request(request)
-            
-            # Send response back to Puch AI
-            await websocket.send_text(json.dumps(response))
-            
+            try:
+                request = json.loads(message)
+                response = await handle_mcp_request(request)
+                await websocket.send_text(json.dumps(response))
+                
+            except json.JSONDecodeError:
+                error_response = {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32700, "message": "Parse error"},
+                    "id": None
+                }
+                await websocket.send_text(json.dumps(error_response))
+                
     except WebSocketDisconnect:
-        mcp_server.disconnect(websocket)
+        logger.info("MCP WebSocket connection closed")
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-        mcp_server.disconnect(websocket)
+        logger.error(f"MCP WebSocket error: {e}")
 
-@app.get("/")
-async def root():
-    """Health check endpoint"""
-    return {
-        "name": "CompareKart MCP Server",
-        "version": "1.0.0",
-        "status": "active",
-        "supported_tools": ["compare_product_prices", "get_available_platforms", "get_platform_categories", "find_best_deal"],
-        "active_connections": len(mcp_server.active_connections)
-    }
+async def handle_mcp_request(request: Dict[str, Any]) -> Dict[str, Any]:
+    """Handle MCP protocol requests"""
+    method = request.get("method")
+    params = request.get("params", {})
+    request_id = request.get("id")
+    
+    try:
+        if method == "tools/call":
+            tool_name = params.get("name")
+            tool_args = params.get("arguments", {})
+            
+            if tool_name == "compare_product_prices":
+                result = await compare_products(
+                    product_name=tool_args.get("product_name", ""),
+                    category=tool_args.get("category"),
+                    platforms=tool_args.get("platforms"),
+                    max_results=tool_args.get("max_results", 5)
+                )
+                
+                return {
+                    "jsonrpc": "2.0",
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps(result, indent=2)
+                            }
+                        ]
+                    },
+                    "id": request_id
+                }
+            
+            elif tool_name == "get_available_platforms":
+                platforms = list(SCRAPERS.keys())
+                return {
+                    "jsonrpc": "2.0",
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text", 
+                                "text": json.dumps({"platforms": platforms}, indent=2)
+                            }
+                        ]
+                    },
+                    "id": request_id
+                }
+            
+            elif tool_name == "get_platform_categories":
+                return {
+                    "jsonrpc": "2.0",
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps({"categories": PLATFORM_CATEGORIES}, indent=2)
+                            }
+                        ]
+                    },
+                    "id": request_id
+                }
+            
+            else:
+                return {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32601, "message": f"Unknown tool: {tool_name}"},
+                    "id": request_id
+                }
+        
+        elif method == "tools/list":
+            tools = [
+                {
+                    "name": "compare_product_prices",
+                    "description": "Compare product prices across multiple e-commerce platforms",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "product_name": {"type": "string", "description": "Name of the product to search for"},
+                            "category": {"type": "string", "description": "Product category (general, beauty, grocery)"},
+                            "platforms": {"type": "array", "items": {"type": "string"}, "description": "Specific platforms to search"},
+                            "max_results": {"type": "integer", "description": "Maximum results per platform", "default": 5}
+                        },
+                        "required": ["product_name"]
+                    }
+                },
+                {
+                    "name": "get_available_platforms",
+                    "description": "Get list of available e-commerce platforms",
+                    "inputSchema": {"type": "object", "properties": {}}
+                },
+                {
+                    "name": "get_platform_categories", 
+                    "description": "Get available product categories and their associated platforms",
+                    "inputSchema": {"type": "object", "properties": {}}
+                }
+            ]
+            
+            return {
+                "jsonrpc": "2.0",
+                "result": {"tools": tools},
+                "id": request_id
+            }
+        
+        else:
+            return {
+                "jsonrpc": "2.0",
+                "error": {"code": -32601, "message": f"Unknown method: {method}"},
+                "id": request_id
+            }
+            
+    except Exception as e:
+        logger.error(f"Error handling MCP request: {e}")
+        return {
+            "jsonrpc": "2.0",
+            "error": {"code": -32603, "message": f"Internal error: {str(e)}"},
+            "id": request_id
+        }
 
+# Health check endpoint
 @app.get("/health")
 async def health_check():
-    """Detailed health check"""
     return {
         "status": "healthy",
-        "scrapers_available": len(SCRAPERS),
-        "categories_available": len(PLATFORM_CATEGORIES),
-        "mcp_connections": len(mcp_server.active_connections)
+        "service": "CompareKart MCP Server",
+        "version": "1.0.0",
+        "timestamp": datetime.now().isoformat()
+    }
+
+# Root endpoint
+@app.get("/")
+async def root():
+    return {
+        "message": "CompareKart MCP Server",
+        "version": "1.0.0",
+        "endpoints": {
+            "websocket": "/mcp",
+            "health": "/health"
+        }
     }
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
